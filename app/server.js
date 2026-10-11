@@ -361,3 +361,6 @@ server.listen(PORT, () => {
   connectEufyControl();
   setInterval(() => { if (eufy.connected && !eufy.loggedIn) eufyStartListening().catch(() => {}); }, 30000);
 });
+
+// Exit promptly when Docker / Container Manager stops the container.
+for (const sig of ["SIGTERM", "SIGINT"]) process.on(sig, () => { log(`${sig} received, shutting down`); process.exit(0); });
