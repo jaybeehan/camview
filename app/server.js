@@ -12,6 +12,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { runScan, scanState } = require("./scan");
+const auth = require("./auth");
 
 const PORT = +(process.env.PORT || 8780);
 const GO2RTC = new URL(process.env.GO2RTC_URL || "http://127.0.0.1:1984");
@@ -246,6 +247,10 @@ function readJson(req) {
     req.on("end", () => { try { resolve(JSON.parse(s || "{}")); } catch { resolve({}); } });
   });
 }
+function readRaw(req) {
+  return new Promise((resolve) => { let s = ""; req.on("data", (d) => { if (s.length < 10000) s += d; }); req.on("end", () => resolve(s)); });
+}
+const isLoopback = (req) => /^(::ffff:)?127\.|^::1$/.test(req.socket.remoteAddress || "");
 function json(res, code, obj) { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(obj)); }
 
 function validate(b) {
@@ -260,8 +265,20 @@ const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, "http://x");
   const p = u.pathname;
   try {
+    // Only go2rtc (on this NAS) may open a doorbell stream.
+    if (p.startsWith("/eufy/")) {
+      if (!isLoopback(req)) { res.writeHead(403); return res.end("forbidden"); }
+      return eufyStream(decodeURIComponent(p.slice(6)), req, res);
+    }
+    if (p === "/login") return auth.handleLogin(req, res, DATA_DIR, readRaw);
+    if (p === "/logout") return auth.handleLogout(req, res);
+    if (!auth.isSignedIn(req, DATA_DIR)) {
+      if (req.method === "GET" && (p === "/" || p === "/index.html")) { res.writeHead(302, { Location: "login" }); return res.end(); }
+      return json(res, 401, { error: "Not signed in" });
+    }
+    if (p === "/api/me") return json(res, 200, { auth: auth.authEnabled });
+    if (p === "/go2rtc") { res.writeHead(302, { Location: "go2rtc/" }); return res.end(); }
     if (p.startsWith("/go2rtc/")) return proxyHttp(req, res, req.url.slice(7));
-    if (p.startsWith("/eufy/")) return eufyStream(decodeURIComponent(p.slice(6)), req, res);
 
     if (p === "/api/cameras" && req.method === "GET") return json(res, 200, cameras);
     if (p === "/api/cameras" && req.method === "POST") {
@@ -330,11 +347,13 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.on("upgrade", (req, socket, head) => {
+  if (!auth.isSignedIn(req, DATA_DIR)) { socket.end("HTTP/1.1 401 Unauthorized\r\n\r\n"); return; }
   if (req.url.startsWith("/go2rtc/")) proxyUpgrade(req, socket, head);
   else socket.destroy();
 });
 
 server.listen(PORT, () => {
+  if (!auth.authEnabled) log("No CAMVIEW_PASSWORD set — the page is open to anyone on the network");
   log(`CamView on http://0.0.0.0:${PORT}  (go2rtc ${GO2RTC.origin}, eufy ${EUFY_WS || "off"})`);
   // go2rtc may start after us; keep its stream list in step.
   syncGo2rtc();

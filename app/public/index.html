@@ -80,6 +80,7 @@
   <button id="scanBtn" title="Look for cameras on your network">Find cameras</button>
   <button id="editBtn" title="Rename, edit, reorder or delete cameras">Edit</button>
   <button id="addBtn" class="primary">+ Add camera</button>
+  <a id="logoutBtn" href="logout" hidden title="Sign out"><button type="button" tabindex="-1">Sign out</button></a>
 </header>
 <main>
   <div id="notice"></div>
@@ -148,6 +149,7 @@ function store(k, v) { try { if (v === undefined) return localStorage.getItem(k)
 async function api(method, url, body) {
   const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
   const j = await r.json().catch(() => ({}));
+  if (r.status === 401) { location.href = "login"; throw new Error("Signed out"); }
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j;
 }
@@ -396,6 +398,7 @@ function renderScan(st) {
   if (!st.running && st.finishedAt && !(st.devices || []).length) box.innerHTML = `<div class="hint" style="margin-top:8px">Nothing camera-like answered. If your cameras are on a different network than the NAS, enter that range above (e.g. 192.168.1.0/24).</div>`;
 }
 
+api("GET", "api/me").then((m) => { $("#logoutBtn").hidden = !m.auth; }).catch(() => {});
 load(); pollEufy(); setInterval(pollEufy, 4000);
 </script>
 </body>

@@ -36,9 +36,11 @@ makes it fetch the new image.
 
 ### Ports
 
-Everything uses host networking: **8780** CamView page, **1984** go2rtc admin page,
-**8554** RTSP re-share (`rtsp://NAS-IP:8554/<camera-id>`, handy for VLC), **8555** WebRTC video,
-**3000** Eufy bridge. Change `PORT` in the compose file if 8780 clashes with something.
+Everything uses host networking. Only two ports are reachable from your network:
+**8780** (the CamView page) and **8555** (WebRTC video). go2rtc's admin page, its RTSP re-share
+and the Eufy bridge listen only inside the NAS, so the CamView password can't be bypassed.
+go2rtc's admin page is still available, behind the password, at **http://NAS-IP:8780/go2rtc/**.
+Change `PORT` in the compose file if 8780 clashes with something.
 
 ## Adding cameras
 
@@ -96,12 +98,17 @@ On the NAS, the shared `data` folder ends up holding `cameras.json` (your camera
 
 ## Security
 
-There's no login on the page, and the Eufy bridge on port 3000 has none either — this is meant for your home network only. Don't port-forward 8780 or 1984
-to the internet; use the Synology VPN or Tailscale if you want to look from outside.
+Set `CAMVIEW_PASSWORD` in the compose file. The page then asks for it once per browser and stays
+signed in for 90 days (**Sign out** button top right). Changing the password signs every browser
+out. After five wrong guesses from one device it makes you wait 30 seconds per try.
+
+The page is plain HTTP, which is fine at home. To look from outside, use the Synology VPN or
+Tailscale rather than port-forwarding 8780. Opening it to the internet would send the password
+unencrypted.
 
 ## Troubleshooting
 
-- **Tile stays black / "error":** open http://NAS-IP:1984 (go2rtc's page) → the stream → check its
+- **Tile stays black / "error":** open http://NAS-IP:8780/go2rtc/ (go2rtc's page) → the stream → check its
   error. Most often the RTSP URL, username or password is wrong. Testing the URL in VLC helps.
 - **Eufy pill says "bridge offline":** Container Manager → Container → camview-eufy → Log — usually wrong login or country.
 - **Logs:** Container Manager → Container → camview → Log shows when doorbell streams start/stop and why.

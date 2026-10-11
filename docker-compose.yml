@@ -12,6 +12,7 @@ services:
     restart: unless-stopped
     environment:
       PORT: "8780"
+      CAMVIEW_PASSWORD: "choose-a-password"   # CHANGE: password for the CamView page ("" = no password)
       GO2RTC_URL: "http://127.0.0.1:1984"
       EUFY_WS_URL: "ws://127.0.0.1:3000"   # set to "" if you remove the eufy section below
       TZ: "America/Edmonton"
@@ -22,16 +23,21 @@ services:
     image: alexxit/go2rtc:latest
     pull_policy: always
     container_name: camview-go2rtc
-    network_mode: host               # uses ports 1984, 8554, 8555
+    network_mode: host               # WebRTC video on port 8555
     restart: unless-stopped
+    # Keep go2rtc's admin page and RTSP re-share inside the NAS, so nobody can
+    # get around the CamView password. Its admin page is at http://NAS-IP:8780/go2rtc/
+    command: ["go2rtc", "-config", "/config/go2rtc.yaml", "-config", "{api: {listen: '127.0.0.1:1984'}, rtsp: {listen: '127.0.0.1:8554'}}"]
     volumes:
       - ./data:/config
 
   eufy:                              # Eufy bridge — delete this section if you have no Eufy devices
     image: bropat/eufy-security-ws:latest
     container_name: camview-eufy
-    network_mode: host               # uses port 3000
+    network_mode: host
     restart: unless-stopped
+    # Same idea: only CamView (inside the NAS) can talk to the Eufy bridge.
+    command: ["bash", "-c", "sed 's/--host 0.0.0.0/--host 127.0.0.1/' /usr/src/app/run.sh > /tmp/run.sh && exec bash /tmp/run.sh"]
     environment:
       USERNAME: "second-eufy-account@example.com"   # CHANGE (see README: use a second account)
       PASSWORD: "its-password"                      # CHANGE
