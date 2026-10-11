@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CamView</title>
+<style>
+  :root {
+    --bg: #0e1013; --panel: #171a1f; --line: #262a31; --text: #e7e9ec; --dim: #8b929c;
+    --accent: #4fa3ff; --danger: #ff5d5d; --ok: #3ccf8e; --warn: #f5b73b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 5; }
+  header h1 { font-size: 16px; margin: 0 auto 0 0; font-weight: 600; letter-spacing: .2px; }
+  button { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: #3a404a; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 600; }
+  button.danger { color: var(--danger); }
+  button.on { border-color: var(--accent); color: var(--accent); }
+  .pill { font-size: 12px; color: var(--dim); display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--danger); }
+
+  main { padding: 12px 16px 24px; }
+  .notice { background: var(--panel); border: 1px solid var(--warn); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+  .notice img { display: block; background: #fff; border-radius: 6px; margin: 8px 0; max-width: 240px; }
+  .notice form { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--tile, 420px)), 1fr)); }
+  .tile { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .tile .bar { display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px; min-height: 38px; }
+  .tile .bar .name { font-weight: 600; margin-right: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .bar button { padding: 3px 9px; font-size: 12px; }
+  .tile .view { position: relative; background: #000; aspect-ratio: 16 / 9; }
+  .tile iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .tile .idle { position: absolute; inset: 0; display: grid; place-items: center; cursor: pointer; color: var(--dim); text-align: center; }
+  .tile .idle .play { width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--dim); display: grid; place-items: center; margin: 0 auto 8px; font-size: 24px; color: var(--text); }
+  .tile .idle:hover .play { border-color: var(--accent); color: var(--accent); }
+  .tile.big { position: fixed; inset: 0; z-index: 20; border-radius: 0; border: 0; }
+  .tile.big .view { flex: 1; aspect-ratio: auto; }
+  .empty { color: var(--dim); text-align: center; padding: 60px 16px; }
+
+  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 18px; width: min(460px, calc(100vw - 32px)); }
+  dialog::backdrop { background: #000a; }
+  dialog h2 { margin: 0 0 12px; font-size: 16px; }
+  label { display: block; margin: 10px 0 4px; color: var(--dim); font-size: 12px; }
+  input[type=text], input[type=url], select { width: 100%; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; flex: 1; }
+  .seg button.on { background: var(--accent); color: #06121f; }
+  .hint { color: var(--dim); font-size: 12px; margin-top: 4px; }
+  .err { color: var(--danger); min-height: 18px; margin-top: 8px; font-size: 13px; }
+  .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+  .actions .danger { margin-right: auto; }
+  .check { display: flex; gap: 8px; align-items: center; margin-top: 12px; color: var(--text); font-size: 13px; }
+  @media (max-width: 600px) { header { flex-wrap: wrap; } .size { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>CamView</h1>
+  <span class="pill" id="eufyPill" hidden><span class="dot"></span><span></span></span>
+  <span class="size row"><button data-size="300px" title="Small tiles">S</button><button data-size="420px" title="Medium tiles">M</button><button data-size="640px" title="Large tiles">L</button></span>
+  <button id="editBtn" title="Rename, edit, reorder or delete cameras">Edit</button>
+  <button id="addBtn" class="primary">+ Add camera</button>
+</header>
+<main>
+  <div id="notice"></div>
+  <div class="grid" id="grid"></div>
+</main>
+
+<dialog id="dlg">
+  <form id="form" method="dialog">
+    <h2 id="dlgTitle">Add camera</h2>
+    <div class="seg" id="typeSeg">
+      <button type="button" data-type="url" class="on">RTSP / URL</button>
+      <button type="button" data-type="eufy">Eufy device</button>
+    </div>
+    <label for="fName">Name</label>
+    <input type="text" id="fName" placeholder="Front door" required>
+    <div id="urlFields">
+      <label for="fUrl">Stream URL</label>
+      <input type="text" id="fUrl" placeholder="rtsp://user:password@192.168.1.50:554/stream1" autocomplete="off" spellcheck="false">
+      <div class="hint">Usually <b>rtsp://user:pass@camera-ip:554/…</b> — the path varies by brand (check the camera's manual or app).</div>
+    </div>
+    <div id="eufyFields" hidden>
+      <label for="fSerial">Device</label>
+      <select id="fSerial"></select>
+      <div class="hint" id="eufyHint"></div>
+    </div>
+    <label class="check"><input type="checkbox" id="fAuto"> Play automatically when the page opens</label>
+    <div class="hint" id="autoHint">Leave off for battery doorbells so they only stream when you tap them.</div>
+    <div class="err" id="fErr"></div>
+    <div class="actions">
+      <button type="button" class="danger" id="delBtn" hidden>Delete</button>
+      <button type="button" id="cancelBtn">Cancel</button>
+      <button type="submit" class="primary" id="saveBtn">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let cams = [], eufy = { enabled: false }, editing = false, current = null, formType = "url";
+const live = new Set(); // ids of non-autoplay cameras the user started
+
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch {} }
+
+async function api(method, url, body) {
+  const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+function playerSrc(cam) {
+  // background=false: the player pauses when the tab is hidden (saves bandwidth & battery)
+  return `go2rtc/stream.html?src=${encodeURIComponent(cam.id)}&mode=webrtc,mse&background=false`;
+}
+
+function render() {
+  const g = $("#grid");
+  // keep running iframes untouched where possible
+  const existing = new Map([...g.children].map((el) => [el.dataset.key, el]));
+  const frag = [];
+  for (const [i, cam] of cams.entries()) {
+    const playing = cam.autoplay || live.has(cam.id);
+    const key = `${cam.id}|${playing}|${cam.name}|${editing}|${i}|${cams.length}`;
+    let el = existing.get(key);
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "tile"; el.dataset.key = key; el.dataset.id = cam.id;
+      const bar = document.createElement("div"); bar.className = "bar";
+      const nm = document.createElement("span"); nm.className = "name"; nm.textContent = cam.name; bar.append(nm);
+      const btn = (txt, title, fn) => { const b = document.createElement("button"); b.textContent = txt; b.title = title; b.onclick = (e) => { e.stopPropagation(); fn(); }; bar.append(b); };
+      if (editing) {
+        if (i > 0) btn("◀", "Move earlier", () => move(i, -1));
+        if (i < cams.length - 1) btn("▶", "Move later", () => move(i, 1));
+        btn("Edit", "Edit camera", () => openDialog(cam));
+      } else {
+        if (!cam.autoplay && playing) btn("Stop", "Stop streaming", () => { live.delete(cam.id); render(); });
+        btn("⤢", "Full screen (Esc to exit)", () => toggleBig(el));
+      }
+      el.append(bar);
+      const view = document.createElement("div"); view.className = "view"; el.append(view);
+      if (playing) {
+        const f = document.createElement("iframe");
+        f.src = playerSrc(cam); f.allow = "autoplay; fullscreen"; f.loading = "lazy";
+        view.append(f);
+      } else {
+        const idle = document.createElement("div"); idle.className = "idle";
+        idle.innerHTML = `<div><div class="play">▶</div>${cam.type === "eufy" ? "Tap to wake & view<br><small>can take 5–15 s</small>" : "Tap to view"}</div>`;
+        idle.onclick = () => { live.add(cam.id); render(); };
+        view.append(idle);
+      }
+    }
+    frag.push(el);
+  }
+  g.replaceChildren(...frag);
+  if (!cams.length) g.innerHTML = `<div class="empty">No cameras yet. Click <b>+ Add camera</b> to get started.</div>`;
+}
+
+function toggleBig(el) {
+  el.classList.toggle("big");
+  document.body.style.overflow = document.querySelector(".tile.big") ? "hidden" : "";
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") document.querySelectorAll(".tile.big").forEach(toggleBig); });
+
+async function move(i, d) {
+  const ids = cams.map((c) => c.id);
+  [ids[i], ids[i + d]] = [ids[i + d], ids[i]];
+  cams = await api("POST", "api/cameras/order", { ids });
+  render();
+}
+
+async function load() {
+  cams = await api("GET", "api/cameras");
+  render();
+}
+
+// ---- Eufy status, captcha and 2FA
+async function pollEufy() {
+  try { eufy = await api("GET", "api/eufy"); } catch { return; }
+  const pill = $("#eufyPill");
+  pill.hidden = !eufy.enabled;
+  if (eufy.enabled) {
+    const [dot, txt] = pill.children;
+    const state = !eufy.connected ? ["bad", "Eufy bridge offline"] : !eufy.loggedIn ? ["warn", "Eufy signing in…"] : ["ok", `Eufy · ${eufy.devices.length} device${eufy.devices.length === 1 ? "" : "s"}`];
+    dot.className = "dot " + state[0]; txt.textContent = state[1];
+  }
+  const n = $("#notice");
+  const want = eufy.captcha ? "captcha:" + eufy.captcha.id : eufy.needCode ? "code" : "";
+  if (n.dataset.want === want) return;
+  n.dataset.want = want;
+  if (eufy.captcha) {
+    n.innerHTML = `<div class="notice"><b>Eufy wants a captcha</b> to finish signing in.<img alt="captcha"><form><input type="text" placeholder="Characters shown above" style="max-width:240px"><button class="primary">Send</button></form></div>`;
+    n.querySelector("img").src = eufy.captcha.image;
+    hookCode(n, "api/eufy/captcha");
+  } else if (eufy.needCode) {
+    n.innerHTML = `<div class="notice"><b>Eufy sent a verification code</b> to the account's email. Enter it here:<form style="margin-top:8px"><input type="text" inputmode="numeric" placeholder="Code" style="max-width:160px"><button class="primary">Send</button></form></div>`;
+    hookCode(n, "api/eufy/verify");
+  } else n.innerHTML = "";
+}
+function hookCode(n, url) {
+  n.querySelector("form").onsubmit = async (e) => {
+    e.preventDefault();
+    const code = n.querySelector("input").value.trim(); if (!code) return;
+    n.innerHTML = `<div class="notice">Sent — signing in…</div>`; n.dataset.want = "sent";
+    try { await api("POST", url, { code }); } catch (err) { n.innerHTML = `<div class="notice">Failed: ${err.message}</div>`; }
+  };
+}
+
+// ---- add / edit dialog
+function setType(t) {
+  formType = t;
+  for (const b of $("#typeSeg").children) b.classList.toggle("on", b.dataset.type === t);
+  $("#urlFields").hidden = t !== "url"; $("#eufyFields").hidden = t !== "eufy";
+  $("#autoHint").hidden = t !== "eufy";
+  if (t === "eufy") {
+    const sel = $("#fSerial"); const keep = sel.value || current?.serial;
+    const devs = eufy.devices || [];
+    sel.innerHTML = devs.map((d) => `<option value="${esc(d.serial)}">${esc(d.name)}${d.model ? " (" + esc(d.model) + ")" : ""}</option>`).join("");
+    if (current?.serial && !devs.some((d) => d.serial === current.serial)) sel.insertAdjacentHTML("afterbegin", `<option value="${esc(current.serial)}">${esc(current.serial)}</option>`);
+    if (keep) sel.value = keep;
+    $("#eufyHint").textContent = !eufy.enabled ? "Eufy isn't set up — add your Eufy login to docker-compose.yml (see README)."
+      : !eufy.connected ? "The Eufy bridge isn't running yet." : !eufy.loggedIn ? "Still signing in to Eufy… try again in a moment."
+      : devs.length ? "" : "No devices found on this Eufy account.";
+    if (!$("#fName").value && devs.length) $("#fName").value = sel.selectedOptions[0]?.textContent.replace(/ \(.*\)$/, "") || "";
+  }
+}
+$("#typeSeg").onclick = (e) => { const t = e.target.dataset.type; if (!t || current) return; setType(t); if (t === "eufy") $("#fAuto").checked = false; else $("#fAuto").checked = true; };
+$("#fSerial").onchange = () => { if (!current) $("#fName").value = $("#fSerial").selectedOptions[0]?.textContent.replace(/ \(.*\)$/, "") || ""; };
+
+function openDialog(cam) {
+  current = cam || null;
+  $("#dlgTitle").textContent = cam ? "Edit camera" : "Add camera";
+  $("#fName").value = cam?.name || "";
+  $("#fUrl").value = cam?.url || "";
+  $("#fAuto").checked = cam ? cam.autoplay : true;
+  $("#fErr").textContent = "";
+  $("#delBtn").hidden = !cam;
+  $("#typeSeg").style.opacity = cam ? .5 : 1;
+  setType(cam?.type || "url");
+  $("#dlg").showModal();
+  (cam ? $("#fName") : formType === "url" ? $("#fName") : $("#fSerial")).focus();
+}
+$("#addBtn").onclick = () => openDialog(null);
+$("#cancelBtn").onclick = () => $("#dlg").close();
+$("#form").onsubmit = async (e) => {
+  e.preventDefault();
+  const body = { name: $("#fName").value, type: formType, url: $("#fUrl").value, serial: $("#fSerial").value, autoplay: $("#fAuto").checked };
+  try {
+    if (current) await api("PUT", "api/cameras/" + current.id, body); else await api("POST", "api/cameras", body);
+    $("#dlg").close(); await load();
+  } catch (err) { $("#fErr").textContent = err.message; }
+};
+$("#delBtn").onclick = async () => {
+  if (!current || !confirm(`Delete "${current.name}"?`)) return;
+  await api("DELETE", "api/cameras/" + current.id); $("#dlg").close(); await load();
+};
+
+$("#editBtn").onclick = () => { editing = !editing; $("#editBtn").classList.toggle("on", editing); $("#editBtn").textContent = editing ? "Done" : "Edit"; render(); };
+
+function setSize(s) {
+  document.documentElement.style.setProperty("--tile", s); store("tile", s);
+  document.querySelectorAll("[data-size]").forEach((b) => b.classList.toggle("on", b.dataset.size === s));
+}
+document.querySelectorAll("[data-size]").forEach((b) => (b.onclick = () => setSize(b.dataset.size)));
+setSize(store("tile") || "420px");
+
+load(); pollEufy(); setInterval(pollEufy, 4000);
+</script>
+</body>
+</html>

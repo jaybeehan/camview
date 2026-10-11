@@ -1,0 +1,42 @@
+# Paste this into Synology Container Manager → Project → Create.
+# Only the lines marked CHANGE need editing.
+# Before creating the project, make an empty "data" folder inside the project folder
+# (File Station), e.g. /docker/camview/data — Synology won't create it for you.
+
+services:
+  camview:
+    image: ghcr.io/jaybeehan/camview:latest
+    pull_policy: always
+    container_name: camview
+    network_mode: host               # page at http://<NAS-IP>:8780
+    restart: unless-stopped
+    environment:
+      PORT: "8780"
+      GO2RTC_URL: "http://127.0.0.1:1984"
+      EUFY_WS_URL: "ws://127.0.0.1:3000"   # set to "" if you remove the eufy section below
+      TZ: "America/Edmonton"
+    volumes:
+      - ./data:/data
+
+  go2rtc:                            # does the video conversion
+    image: alexxit/go2rtc:latest
+    pull_policy: always
+    container_name: camview-go2rtc
+    network_mode: host               # uses ports 1984, 8554, 8555
+    restart: unless-stopped
+    volumes:
+      - ./data:/config
+
+  eufy:                              # Eufy bridge — delete this section if you have no Eufy devices
+    image: bropat/eufy-security-ws:latest
+    container_name: camview-eufy
+    network_mode: host               # uses port 3000
+    restart: unless-stopped
+    environment:
+      USERNAME: "second-eufy-account@example.com"   # CHANGE (see README: use a second account)
+      PASSWORD: "its-password"                      # CHANGE
+      COUNTRY: "CA"
+      PORT: "3000"
+      TRUSTED_DEVICE_NAME: "CamView"
+    volumes:
+      - ./data:/data
