@@ -26,6 +26,7 @@
   .notice { background: var(--panel); border: 1px solid var(--warn); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
   .notice img { display: block; background: #fff; border-radius: 6px; margin: 8px 0; max-width: 240px; }
   .notice form { display: flex; gap: 8px; flex-wrap: wrap; }
+  .notice pre { white-space: pre-wrap; word-break: break-word; font-size: 11px; color: var(--dim); max-height: 260px; overflow: auto; margin: 6px 0 0; }
 
   .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--tile, 420px)), 1fr)); }
   .tile { display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
@@ -68,6 +69,12 @@
 </header>
 <main>
   <div id="notice"></div>
+  <div id="diag" hidden class="notice">
+    <div class="row" style="justify-content:space-between;flex-wrap:wrap"><b id="diagTitle"></b><button id="retryBtn">Retry sign-in</button></div>
+    <div id="diagErr" style="color:var(--danger);margin-top:6px"></div>
+    <div class="hint" id="diagHint" style="margin-top:6px"></div>
+    <details style="margin-top:8px"><summary style="cursor:pointer;color:var(--dim)">Bridge log</summary><pre id="diagLog"></pre></details>
+  </div>
   <div class="grid" id="grid"></div>
 </main>
 
@@ -191,6 +198,21 @@ async function pollEufy() {
     const state = !eufy.connected ? ["bad", "Eufy bridge offline"] : !eufy.loggedIn ? ["warn", "Eufy signing in…"] : ["ok", `Eufy · ${eufy.devices.length} device${eufy.devices.length === 1 ? "" : "s"}`];
     dot.className = "dot " + state[0]; txt.textContent = state[1];
   }
+  // stuck signing in (or bridge offline): show why, with the bridge's own log
+  const d = $("#diag");
+  const stuck = eufy.enabled && !eufy.loggedIn && !eufy.captcha && !eufy.needCode;
+  d.hidden = !stuck;
+  if (stuck) {
+    $("#diagTitle").textContent = eufy.connected ? "Eufy hasn't finished signing in" : "Can't reach the Eufy bridge";
+    $("#retryBtn").hidden = !eufy.connected;
+    $("#diagErr").textContent = eufy.error || "";
+    $("#diagHint").textContent = eufy.connected
+      ? "Usual causes: wrong email/password or COUNTRY in the compose file, or the shared-device invite not yet accepted on the second account. A first sign-in can take a minute."
+      : "Check that the camview-eufy container is running (Container Manager → Container).";
+    const pre = $("#diagLog"), atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
+    pre.textContent = (eufy.log || []).join("\n") || "(nothing logged yet)";
+    if (atBottom) pre.scrollTop = pre.scrollHeight;
+  }
   const n = $("#notice");
   const want = eufy.captcha ? "captcha:" + eufy.captcha.id : eufy.needCode ? "code" : "";
   if (n.dataset.want === want) return;
@@ -271,6 +293,7 @@ function setSize(s) {
 document.querySelectorAll("[data-size]").forEach((b) => (b.onclick = () => setSize(b.dataset.size)));
 setSize(store("tile") || "420px");
 
+$("#retryBtn").onclick = async () => { $("#retryBtn").disabled = true; try { await api("POST", "api/eufy/retry"); } catch {} setTimeout(() => ($("#retryBtn").disabled = false), 5000); };
 load(); pollEufy(); setInterval(pollEufy, 4000);
 </script>
 </body>

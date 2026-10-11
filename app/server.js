@@ -73,7 +73,14 @@ async function syncGo2rtc(removedIds = []) {
 
 // ---------------------------------------------------------------- Eufy control connection
 // One long-lived connection used for: device list, login captcha / 2FA.
-const eufy = { enabled: !!EUFY_WS, connected: false, loggedIn: false, devices: [], captcha: null, needCode: false, error: null };
+const eufy = { enabled: !!EUFY_WS, connected: false, loggedIn: false, devices: [], captcha: null, needCode: false, error: null, log: [] };
+
+// Keep the bridge's recent log lines so the page can show why sign-in is stuck.
+function eufyLog(level, text) {
+  const line = `${new Date().toTimeString().slice(0, 8)} ${level ? level.toUpperCase() + " " : ""}${text}`.slice(0, 400);
+  eufy.log.push(line);
+  if (eufy.log.length > 40) eufy.log.splice(0, eufy.log.length - 40);
+}
 let ctl = null, ctlSeq = 0;
 const ctlPending = new Map();
 
@@ -103,9 +110,12 @@ async function refreshEufyDevices(serials) {
 async function eufyStartListening() {
   const r = await ctlSend("start_listening");
   const st = r.state || {};
-  eufy.loggedIn = !!st.driver?.connected;
   const serials = (st.devices || []).map((d) => (typeof d === "string" ? d : d.serialNumber));
-  if (eufy.loggedIn) await refreshEufyDevices(serials);
+  // Eufy's newer ("mega") login can leave driver.connected false even though
+  // sign-in worked, so having devices counts as signed in.
+  eufy.loggedIn = !!st.driver?.connected || serials.length > 0;
+  if (eufy.loggedIn) eufy.error = null;
+  if (serials.length) await refreshEufyDevices(serials);
 }
 
 function connectEufyControl() {
@@ -120,6 +130,7 @@ function connectEufyControl() {
       try {
         await ctlSend("set_api_schema", { schemaVersion: Math.min(21, m.maxSchemaVersion ?? 21) });
         await eufyStartListening();
+        await ctlSend("driver.start_listening_logs").catch(() => {});
       } catch (e) { eufy.error = e.message; }
     } else if (m.type === "result") {
       const p = ctlPending.get(m.messageId); if (!p) return;
@@ -132,6 +143,17 @@ function connectEufyControl() {
       else if (e.event === "connected") { eufy.loggedIn = true; eufy.captcha = null; eufy.needCode = false; eufyStartListening().catch(() => {}); }
       else if (e.event === "disconnected") { eufy.loggedIn = false; }
       else if (e.event === "device added" || e.event === "device removed") { eufyStartListening().catch(() => {}); }
+      else if (e.event === "connection error") {
+        const err = e.error || {};
+        eufy.error = "Eufy sign-in failed: " + (err.message || err.name || JSON.stringify(err)).slice(0, 300);
+        eufyLog("error", eufy.error);
+      } else if (e.event === "logging") {
+        const msg = e.message || {};
+        const level = msg.meta?.logLevel || msg.logLevel || "";
+        let text = msg.message ?? (Array.isArray(msg.argumentsArray) ? msg.argumentsArray.join(" ") : "");
+        if (msg.arguments && Object.keys(msg.arguments).length) text += " " + JSON.stringify(msg.arguments);
+        if (!/livestream|video data|audio data/i.test(text)) eufyLog(level, text);
+      }
     }
   };
   // Node's WebSocket may fire only "error" (no "close") when the bridge isn't up
@@ -275,6 +297,11 @@ const server = http.createServer(async (req, res) => {
       await ctlSend("driver.set_captcha", { captchaId: eufy.captcha?.id, captcha: String(b.code || "") });
       eufy.captcha = null; return json(res, 200, {});
     }
+    if (p === "/api/eufy/retry" && req.method === "POST") {
+      eufy.error = null; eufyLog("", "Retrying sign-in…");
+      ctlSend("driver.connect").catch((e) => { eufy.error = e.message; });
+      return json(res, 200, {});
+    }
     if (p === "/api/eufy/verify" && req.method === "POST") {
       const b = await readJson(req);
       await ctlSend("driver.set_verify_code", { verifyCode: String(b.code || "") });
@@ -302,4 +329,5 @@ server.listen(PORT, () => {
   syncGo2rtc();
   setInterval(syncGo2rtc, 60000);
   connectEufyControl();
+  setInterval(() => { if (eufy.connected && !eufy.loggedIn) eufyStartListening().catch(() => {}); }, 30000);
 });
