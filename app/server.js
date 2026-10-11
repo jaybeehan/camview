@@ -10,6 +10,8 @@ const http = require("http");
 const net = require("net");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
+const { runScan, scanState } = require("./scan");
 
 const PORT = +(process.env.PORT || 8780);
 const GO2RTC = new URL(process.env.GO2RTC_URL || "http://127.0.0.1:1984");
@@ -289,6 +291,15 @@ const server = http.createServer(async (req, res) => {
         saveCameras(); await syncGo2rtc();
         return json(res, 200, cam);
       }
+    }
+
+    if (p === "/api/scan" && req.method === "GET") return json(res, 200, scanState);
+    if (p === "/api/scan" && req.method === "POST") {
+      const b = await readJson(req);
+      if (scanState.running) return json(res, 409, { error: "A scan is already running" });
+      const self = Object.values(os.networkInterfaces()).flat().filter((a) => a && a.family === "IPv4").map((a) => a.address);
+      runScan({ go2rtc: GO2RTC, rangeText: b.range, user: b.user || "", pass: b.pass || "", skip: b.range ? [] : self });
+      return json(res, 200, {});
     }
 
     if (p === "/api/eufy" && req.method === "GET") return json(res, 200, eufy);

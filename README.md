@@ -58,6 +58,13 @@ If a grid of many cameras is heavy, use each camera's lower-resolution "sub" str
 "Play automatically" off for battery doorbells; tap the tile when you want to look. Waking the
 doorbell takes roughly 5–15 seconds.
 
+**Find cameras** scans your home network (about 15–30 s) for anything serving RTSP video, plus
+cameras that announce themselves over ONVIF, and tries the stream paths that common and cheap
+cameras use. Enter a camera's username/password first. Most cameras won't share video without one,
+and the scan stops after two rejected logins so it can't lock a camera. Found streams get an
+**Add** button. Cameras on unusual RTSP ports can be included with the `SCAN_EXTRA_RTSP_PORTS`
+setting (e.g. `"8001,9554"`) in the compose file.
+
 **Edit** (top right) lets you rename, change, reorder (◀ ▶) or delete cameras. S / M / L sets tile size.
 Click ⤢ on a tile for full screen; Esc to go back.
 
